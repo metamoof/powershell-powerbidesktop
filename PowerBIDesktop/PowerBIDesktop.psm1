@@ -1,6 +1,5 @@
-Function Get-PowerBIDesktopConnections 
-{
-<#
+Function Get-PowerBIDesktopConnections {
+    <#
 .SYNOPSIS
 Get the connection data for currently running Power BI Desktop sessions
 .DESCRIPTION
@@ -27,19 +26,27 @@ Address    : ::1
 Port       : 51125
 
 #>
+
+    [CmdletBinding()]
+
+    param(
+        [string] 
+        $Title
+    )
+
     # Get the power BI Desktop Processes
     $pbiProcesses = Get-Process | 
-            Where-Object ProcessName -eq "PBIDesktop" |  
-            Where-Object MainWindowTitle -ne ""
+        Where-Object ProcessName -eq "PBIDesktop" |  
+        Where-Object MainWindowTitle -ne ""
     
     # Each process performs a local connection to MS Analysis Services in the background.
     # We get the ports on loopback connections. 
     $pbiPorts = Get-NetTCPConnection -OwningProcess @($pbiProcesses | Select-Object -ExpandProperty Id) |
-            Where-Object State -eq "Established" | 
-            Where-Object {$_.LocalAddress -eq $_.RemoteAddress}  | 
-            Select-Object OwningProcess, RemoteAddress, RemotePort | 
-            Sort-Object {$_.OwningProcess} | 
-            Get-Unique -AsString
+        Where-Object State -eq "Established" | 
+        Where-Object {$_.LocalAddress -eq $_.RemoteAddress}  | 
+        Select-Object OwningProcess, RemoteAddress, RemotePort | 
+        Sort-Object {$_.OwningProcess} | 
+        Get-Unique -AsString
 
     # Now we decorate the process objects:
     $pbiProcesses | ForEach-Object {Add-Member -InputObject $_ -NotePropertyName Port -NotePropertyValue ($pbiports | Where-Object OwningProcess -eq $_.Id).RemotePort}
@@ -51,7 +58,13 @@ Port       : 51125
     # Remove unneeded information
     $pbiProcesses = $pbiProcesses | Select-Object Id, Title, DataSource, Address, Port
 
-    $pbiProcesses
+    if ($title) {
+        $pbiProcesses | Where-Object Title -Like $Title
+    }
+    else {
+        $pbiProcesses        
+    }
+    
 
 }
 
