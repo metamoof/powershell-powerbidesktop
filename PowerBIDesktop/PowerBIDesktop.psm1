@@ -58,7 +58,7 @@ Port       : 51125
     # Remove unneeded information
     $pbiProcesses = $pbiProcesses | Select-Object Id, Title, DataSource, Address, Port
 
-    if ($title) {
+    if ($title -ne $null) {
         $pbiProcesses | Where-Object Title -Like $Title
     }
     else {
@@ -68,3 +68,66 @@ Port       : 51125
 
 }
 
+Function Invoke-PowerBIDesktopDAXCommand {
+    [CmdletBinding()]
+
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]
+        $Command,
+        [string]
+        $Title = "*"
+    )
+
+    $sessions = Get-PowerBIDesktopConnections -Title $Title
+
+    if ($sessions.length -eq 0) {
+        if ($Title) {
+            Write-Error -ErrorAction Stop -Message "Could not find any active Power BI connection with title <$title>" 
+        }
+        else {
+            Write-Error -ErrorAction Stop -Message "Could not find any active Power BI connections. Is Power BI Running?"
+        }
+    }
+    elseif ($sessions.length -gt 1) {
+        if ($Title) {
+            Write-Error -ErrorAction Stop -Message ("There is more than one active Power BI connection with title <$title>. Please be more specific in your filter",($sessions | Format-Table) -Join "`r`n") 
+        } else {
+            Write-Error -ErrorAction Stop -Message ("There is more than one active Power BI connection avaoilable. Please use -Title to specify which connection to use",($sessions | Format-Table) -Join "`r`n") 
+        }
+    }
+    $session = $sessions[0]
+
+    Write-Verbose "Connecting to Power BI connection $($session.Title) [$($session.DataSource)]"
+
+    try {
+        [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.AnalysisServices.AdomdClient")  
+        $connection = New-Object Microsoft.AnalysisServices.AdomdClient.AdomdConnection
+    } catch {
+        Write-Error -ErrorAction Stop -Message "Could not create the connection. ADOMD.NET not installed. Please go to https://www.microsoft.com/en-us/download/details.aspx?id=52676 and download and install SQL_AS_ADOMD.msi"
+    }
+
+    try {
+        $connection.ConnectionString = "Data Source=localhost:$($session.port)"
+        $connection.open()
+    } catch {
+        Write-Error "Error connecting to $($session.Title) [$($connection.ConnectionString)]"
+        throw $_
+    }
+
+    try {
+        Write-Verbose "Executing the DAX command: $Command"
+        $com = $connection.CreateCommand()
+        $com.CommandText = "$Command"
+        $adapter = New-Object -TypeName Microsoft.AnalysisServices.AdomdClient.AdomdDataAdapter $com
+        $dataset = New-Object -TypeName System.Data.DataSet
+
+        $adapter.Fill($dataset)
+        
+    } catch {
+        Write-Error "Error Executing DAX Statement: $Command"
+        throw $_
+    }
+    
+    $dataset
+}
